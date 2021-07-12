@@ -9,6 +9,7 @@ InputMap = {
     "left" : False,
     "right" : False,
     #actions
+    "jump" : False,
     "spawn" : False,
     "screenshot": False,
     "menu": False
@@ -27,7 +28,7 @@ def set_default_input(parentSelf):
     parentSelf.accept("raw-d", parentSelf.event_key_change, ["right", True])
     parentSelf.accept("raw-d-up", parentSelf.event_key_change, ["right", False])
     #parentSelf.accept("raw-space", parentSelf.event_key_change, ["spawn", True])
-    parentSelf.accept("raw-space-up", parentSelf.event_key_change, ["spawn", True])
+    parentSelf.accept("raw-space-up", parentSelf.event_key_change, ["jump", True])
     #parentSelf.accept("raw-p", parentSelf.event_key_change, ["screenshot",True])
     parentSelf.accept("raw-p-up", parentSelf.event_key_change, ["screenshot",True])
     #parentSelf.accept("raw-escape",parentSelf.event_key_change, ["menu",True])

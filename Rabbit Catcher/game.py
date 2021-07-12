@@ -1,7 +1,3 @@
-import os
-
-from direct.gui.DirectGui import *
-from direct.gui.OnscreenText import OnscreenText
 from direct.showbase.DirectObject import DirectObject
 from direct.showbase.ShowBase import ShowBase
 from panda3d.ai import *
@@ -16,89 +12,50 @@ class Game(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
         game_window_settings(self)
-        game_window_name(self,'Level Editor')
+        game_window_name(self,'Rabbit Catcher')
         set_default_input(self)
                         
         #temporary
-        #self.disableMouse()  # Disable the default camera control
+        self.disableMouse()  # Disable the default camera control
         self.camera.setPos(20*2/2,20*2/2,100)
         self.camera.setHpr(0, -90, 0)
+        self.camLens.setFov(90)
+        self.camLens.setNear(0.05)
+        #nodePath.setTwoSided(True) for two side rendering
         
         #=========================================================================
         # GUI
-        #=========================================================================
-        self.frameOverlay = DirectFrame(frameColor =(1, 1, 1, 0.25), frameSize = (-1.2, 1.2, -1, 1),
-                                pos=(0, 0, 0))
-        frameLevels = DirectFrame(parent = self.frameOverlay, frameColor =(1, 1, 1, 0.0),
-                                frameSize = (-1.2, .8, -1, 1), pos=(0, 0, 0))
-        path = 'Levels'
-        campaignDict = {}
-        for dirPath, dirNames, fileNames in os.walk(path):
-            for file in fileNames:
-                if (file.endswith('.bam')):
-                    levelDirPath = dirPath.replace('\\','/')  
-                    if not levelDirPath in campaignDict:
-                        campaignDict[levelDirPath] = [file]
-                    else:                      
-                        levels = campaignDict[levelDirPath]
-                        levels.append(file)
-                        campaignDict[levelDirPath] = levels
-        row = 0
-        col = 0
-        standardSize = (-4.5, 4.5, -0.5, 1)
-        for folder in campaignDict.keys():
-            col = 0
-            folderLabel = DirectLabel(parent = frameLevels, text = str(folder), frameColor =(1, 1, 1, 0.0),
-                                pos = (-0.95+(col*0.5), 0, 0.95-(row*0.1)), scale = 0.05, frameSize = standardSize)
-            row +=1
-            for level in campaignDict[folder]:
-                levelPath = Filename(folder,level)
-                levelPath.standardize()  
-                buttonLevel = DirectButton(parent = frameLevels, text = str(level),
-                                pos = (-0.95+(col*0.5), 0, 0.95-(row*0.1)), scale = 0.05,
-                                frameSize = standardSize, command = self.command_load_level,
-                                extraArgs = [levelPath])
-                col += 1
-                if col > 3:
-                    row += 1
-                    col = 0
-            row += 1
-            
-        self.winMessage = OnscreenText(text='you win!!!  (press esc to play again)', pos = (0, 0), scale = 0.1)
-        self.winMessage.hide()
+        #=========================================================================        
+        load_game_GUI(self)
         
-        self.rabbitCounter = OnscreenText(text='rabbits remaining', pos=(0.96,0.9), scale = 0.05, mayChange = 1)
-        
-        keyboardMap = self.win.get_keyboard_map()
-        upMap = keyboardMap.get_mapped_button('w')
-        downMap = keyboardMap.get_mapped_button('s')
-        leftMap = keyboardMap.get_mapped_button('a')
-        rightMap = keyboardMap.get_mapped_button('d')
-        pMap = keyboardMap.get_mapped_button('p')
-        escMap = keyboardMap.get_mapped_button('escape')
-        infostring = f'{upMap}: forward\n{downMap}: backwards\n{leftMap}: left\n{rightMap}: right\nMouse to look\n{pMap}: screenshot\n{escMap}: menu'
-        self.infoMessage = OnscreenText(text=infostring, pos=(0.98,-0.65), scale = 0.05)
         #=========================================================================
         # Important variables
         #=========================================================================                
         self.levelNodePath = NodePath(PandaNode('level'))
         self.levelNodePath.reparentTo(self.render)
         self.playerSpawnList = []
+        self.placedExitsList = []
         self.playerAvatar = None
-        self.maskValues = BitMask32(0x01)
         self.paused = False        
         self.toggle_frameOverlay(True)
         self.cTrav = CollisionTraverser()
-        self.collisionHandler = CollisionHandlerPusher()
-        """
+        self.cTrav.setRespectPrevTransform(True)
+        self.collisionHandlerPusher = CollisionHandlerPusher()
+        self.collisionHandlerPusher.setHorizontal(True)
+        self.collisionHandlerGravity = CollisionHandlerGravity()
+        self.collisionHandlerGravity.setGravity(10.0)
+        self.collisionHandlerGravity.setMaxVelocity(100)
+        self.collisionHandlerEvent = CollisionHandlerEvent()
+        self.maskPusher = self.return_bitMask_with_specified_bit(0)
+        self.maskGravity = self.maskPusher #self.return_bitMask_with_specified_bit(1)
+        self.maskEvent = self.return_bitMask_with_specified_bit(2)
         self.aiWorld = AIWorld(self.render)   
-        """
         
         #=========================================================================
         # Generating events with CollisionHandlerEvent
         #=========================================================================
         # https://docs.panda3d.org/1.10/python/programming/collision-detection/collision-handlers#collisionhandlerevent
-        self.collisionHandler.addInPattern('%fn-into-%in')
+        self.collisionHandlerEvent.addInPattern('%fn-into-%in')
         
         #=========================================================================
         # attaching the event functions to their events
@@ -107,12 +64,9 @@ class Game(ShowBase):
         # https://docs.panda3d.org/1.10/python/_modules/direct/showbase/DirectObject
         # The event functions are below, this still is the __init__ function
         self.eventHandlerDO = DirectObject()
-        self.eventHandlerDO.accept('playercnode-into-exitcnode', self.event_exit_reached)
-        self.eventHandlerDO.accept('playercnode-into-rabbitcnode', self.event_rabbit_caught)
-        self.eventHandlerDO.accept('rabbitcnode-into-blockcnode', self.event_rabbit_collide)
-        self.eventHandlerDO.accept('rabbitcnode-into-rabbitcnode', self.event_rabbit_collide)
-        self.eventHandlerDO.accept('rabbitcnode-into-exitcnode', self.event_rabbit_collide)
-        self.eventHandlerDO.accept('rabbitcnode-again-blockcnode', self.event_rabbit_collide)
+        self.eventHandlerDO.accept('playercolevent-into-exitcnode', self.event_exit_reached)
+        self.eventHandlerDO.accept('playercolevent-into-rabbitcolevent', self.event_rabbit_caught)
+        self.eventHandlerDO.accept('rabbitcolevent-into-rabbitcolevent', self.event_test)
         
         #=========================================================================
         #add the task to task manager
@@ -121,40 +75,57 @@ class Game(ShowBase):
         taskMgr.add(self.task_input, 'input')
         taskMgr.add(self.task_ai_update, 'ai_update')
         
+    def return_bitMask_with_specified_bit(self,bit):
+        return BitMask32.bit(bit)
+        
     def place_exit(self,parent,positionList = []):
         for newPos in positionList:
-            load_exit(parent,posV3 = newPos, scaleV3 = Vec3(0.5,0.5,0.5))
+            exitNodePath, exitCollider = load_exit(parent,posV3 = newPos, scaleV3 = Vec3(0.5,0.5,0.5))
+            self.placedExitsList.append(exitNodePath)            
             
     def place_player(self,parent, positionList = []):
         randomizer = Randomizer()
+        #random place if there is no player spawn
         if len(positionList) < 1:
             newPos = Vec3(randomizer.randomInt(20),randomizer.randomInt(20),2.5)
         else:
             index = randomizer.randomInt(len(positionList)-1)
             newPos = Vec3(positionList[index])
         self.playerAvatar = None
-        self.playerAvatar, playerCollider = load_player(parent, posV3 = newPos, scaleV3 = Vec3(0.5,0.5,0.5))
-        playerCollider.node().setFromCollideMask(self.maskValues)
-        self.collisionHandler.addCollider(playerCollider,self.playerAvatar)
-        self.cTrav.addCollider(playerCollider, self.collisionHandler)
+        self.playerAvatar, pusherCollider, gravityCollider, eventCollider = load_player(parent, posV3 = newPos)
+        pusherCollider.node().setFromCollideMask(self.maskPusher)
+        pusherCollider.node().setIntoCollideMask(BitMask32.allOff())
+        gravityCollider.node().setFromCollideMask(self.maskGravity)
+        gravityCollider.node().setIntoCollideMask(BitMask32.allOff())
+        eventCollider.node().setFromCollideMask(self.maskEvent)
+        eventCollider.node().setIntoCollideMask(self.maskEvent)
+        self.collisionHandlerPusher.addCollider(pusherCollider, self.playerAvatar)
+        self.cTrav.addCollider(pusherCollider, self.collisionHandlerPusher)
+        self.collisionHandlerGravity.addCollider(gravityCollider, self.playerAvatar)
+        self.cTrav.addCollider(gravityCollider,self.collisionHandlerGravity)
+        self.cTrav.addCollider(eventCollider,self.collisionHandlerEvent)
         
     def place_rabbit(self,parent, positionList = []):
         for newPos in positionList:
-            newRabbit,newRabbitCollider = load_rabbit(parent, posV3 = newPos-Vec3(0, 0, 0.25), scaleV3 = Vec3(0.05,0.05,0.05))
-            """
+            newRabbit, pusherCollider, gravityCollider, eventCollider= load_rabbit(parent, posV3 = newPos-Vec3(0, 0, 0.25), scaleV3 = Vec3(0.05,0.05,0.05))
+            pusherCollider.node().setFromCollideMask(self.maskPusher)
+            pusherCollider.node().setIntoCollideMask(BitMask32.allOff())
+            pusherCollider.show()
+            gravityCollider.node().setFromCollideMask(self.maskGravity)
+            gravityCollider.node().setIntoCollideMask(BitMask32.allOff())
+            eventCollider.node().setFromCollideMask(self.maskEvent)
+            eventCollider.node().setIntoCollideMask(self.maskEvent)
+            self.collisionHandlerPusher.addCollider(pusherCollider, newRabbit)
+            self.cTrav.addCollider(pusherCollider, self.collisionHandlerPusher)
+            self.collisionHandlerGravity.addCollider(gravityCollider, newRabbit)
+            self.cTrav.addCollider(gravityCollider,self.collisionHandlerGravity)
+            self.cTrav.addCollider(eventCollider,self.collisionHandlerEvent)
             rabbitaiChar = AICharacter('rabbitAI', newRabbit, 100, 0.05, 5)
             rabbitBehaviors = rabbitaiChar.getAiBehaviors()
-            #rabbitBehaviors.evade(self.playerAvatar, 10, 20, 0.8)
-            rabbitBehaviors.wander(120, 0, 100, 0.2)
-            rabbitBehaviors.obstacleAvoidance(0.5)
-            """
-            newRabbitCollider.node().setFromCollideMask(self.maskValues)
-            self.collisionHandler.addCollider(newRabbitCollider,newRabbit)
-            self.cTrav.addCollider(newRabbitCollider,self.collisionHandler)            
-            """
+            rabbitBehaviors.evade(self.playerAvatar, 10, 20, 0.8)
+            #rabbitBehaviors.wander(120, 0, 100, 0.2)
+            #rabbitBehaviors.obstacleAvoidance(0.5)
             self.aiWorld.addAiChar(rabbitaiChar)
-            """
-
         
     def center_mouse(self):
         props = base.win.getProperties()
@@ -191,25 +162,36 @@ class Game(ShowBase):
         self.winMessage.hide()
         self.levelNodePath.removeNode()
         self.levelNodePath = newLevel
-        self.levelNodePath.setCollideMask(self.maskValues)
-        """
-        for x in self.levelNodePath.findAllMatches('*'):
-            self.aiWorld.addObstacle(x)
-        """
+        self.levelNodePath.setCollideMask(self.maskPusher)
+        wallTexture = loader.loadCubeMap('Assets/cubeMapBrickWall/brickWall#.png')
+        #wallTexture = loader.loadTexture('Assets/Untitled.png')
+        #wallTexture.setWrapU(Texture.WM_clamp)
+        #wallTexture.setWrapV(Texture.WM_clamp) 
+        #wallTexture.setBorderColor((0.4, 0.5, 1, 1))
+        #wallTexture.setAnisotropicDegree(2)
+        for wallBlock in self.levelNodePath.findAllMatches('**/wall'):
+            wallBlock.setTexture(wallTexture, 1)
+            self.aiWorld.addObstacle(wallBlock)
+        self.graphicsEngine.renderFrame()
+        for blockCollisionNode in self.levelNodePath.findAllMatches('**/blockcnode'):
+            #blockCollisionNode.node().setCollideMask(self.maskPusher)
+            pass
         self.playerSpawnList = []
-        exitList = []
-        rabbitList = []
-        offset = Vec3(0,0,1.5)
+        self.exitColliderList = []
+        self.playerAvatar = None
+        exitPositionList = []
+        rabbitPositionList = []
         for startPoint in newLevel.findAllMatches('start'):
-            self.playerSpawnList.append(startPoint.getPos()+offset)
+            self.playerSpawnList.append(startPoint.getPos()+Vec3(0,0,1))
         for exitPoint in newLevel.findAllMatches('exit'):
-            exitList.append(exitPoint.getPos()+offset)
+            exitPositionList.append(exitPoint.getPos()+Vec3(0,0,1.5))
         for rabbitPoint in newLevel.findAllMatches('rabbit'):
-            rabbitList.append(rabbitPoint.getPos()+offset)            
+            rabbitPositionList.append(rabbitPoint.getPos()+Vec3(0,0,1.5))            
         self.place_player(self.levelNodePath,self.playerSpawnList)
-        self.place_exit(self.levelNodePath,exitList)
-        self.place_rabbit(self.levelNodePath,rabbitList)
+        self.place_exit(self.levelNodePath,exitPositionList)
+        self.place_rabbit(self.levelNodePath,rabbitPositionList)
         self.levelNodePath.reparentTo(self.render)
+        self.graphicsEngine.renderFrame()
         self.toggle_frameOverlay(False)
         
 
@@ -224,11 +206,9 @@ class Game(ShowBase):
     def event_rabbit_caught(self,entry):
         rabbit = entry.getIntoNodePath().getParent()
         rabbit.removeNode()
-        
-    def event_rabbit_collide(self,entry):
-        rabbit = entry.getFromNodePath().getParent()
-        rando = Randomizer()
-        rabbit.setH(rabbit,rando.randomInt(45))
+
+    def event_test(self,entry):
+        print("rabbits touching")
         
     def event_key_change(self, controlName, controlState):
         self.inputMap[controlName] = controlState
@@ -247,18 +227,28 @@ class Game(ShowBase):
         # first person camera based on
         # https://discourse.panda3d.org/t/first-person-camera/12904
         # https://discourse.panda3d.org/t/simple-first-person-game-base/25520
-        playerSpeed = 6*dt
+        playerSpeed = 4*dt
         lookSpeed = 18
-        if self.playerAvatar and not self.paused: 
+        if self.playerAvatar and not self.paused:
+            newX = 0
+            newY = 0
             if self.inputMap["up"]:
-                self.playerAvatar.setY(self.playerAvatar,playerSpeed)
+                #self.playerAvatar.setY(self.playerAvatar,playerSpeed)
+                newY = 1
             if self.inputMap["down"]:
-                self.playerAvatar.setY(self.playerAvatar,-playerSpeed)
+                #self.playerAvatar.setY(self.playerAvatar,-playerSpeed)
+                newY = -1
             if self.inputMap["left"]:
-                self.playerAvatar.setX(self.playerAvatar,-playerSpeed)
+                #self.playerAvatar.setX(self.playerAvatar,-playerSpeed)
+                newX = -1
             if self.inputMap["right"]:
-                self.playerAvatar.setX(self.playerAvatar,playerSpeed)
-            self.playerAvatar.setPos(Vec3(self.playerAvatar.getX(),self.playerAvatar.getY(),0.5))
+                #self.playerAvatar.setX(self.playerAvatar,playerSpeed)
+                newX = 1
+            newXYZ = Vec3(newX,newY,0)
+            newXYZ.normalize()
+            #self.playerAvatar.setFluidPos(Vec3(self.playerAvatar.getX(),self.playerAvatar.getY()),0.5)
+            if self.collisionHandlerGravity.isOnGround():
+                self.playerAvatar.setFluidPos(self.playerAvatar,newXYZ*playerSpeed)
             #print(self.playerAvatar.getPos())
             if self.mouseWatcherNode.hasMouse():
                 mouseX = self.mouseWatcherNode.getMouseX()
@@ -274,11 +264,18 @@ class Game(ShowBase):
                     elif self.playerAvatar.getP() < -90:
                         self.playerAvatar.setP(self.playerAvatar.getP() + 1)                        
             self.center_mouse()
-            self.camera.setPos(self.playerAvatar.getPos())
+            self.camera.setPos(self.playerAvatar.getPos()+Vec3(0,0,0.75))
             self.camera.setHpr(self.playerAvatar.getHpr())
         if self.inputMap['spawn']:
             print('spawniewanie')
             self.event_key_change('spawn',False)
+        if self.inputMap['jump']:
+            #print('jump')
+            if self.collisionHandlerGravity.isOnGround():
+                #print('on the ground')
+                #self.collisionHandlerGravity.addVelocity(20) no good, makes everything jump
+                print("jump")
+            self.event_key_change('jump',False)
         if self.inputMap['screenshot']:
             print('screenshot')
             base.screenshot()
@@ -289,19 +286,17 @@ class Game(ShowBase):
         return task.cont    
     
     def task_ai_update(self,task):
-        """
         self.aiWorld.update()
-        """
         dt = globalClock.getDt()   
-        rabbitSpeed = 4*dt
-        self.liveRabbitsList = self.levelNodePath.findAllMatches('pokemon')
+        self.liveRabbitsList = self.levelNodePath.findAllMatches('rabbitholder')
         if len(self.liveRabbitsList) > 0:
             self.rabbitCounter.setText(f'rabbits remaining:\n {len(self.liveRabbitsList)}')
+            for placedExit in self.placedExitsList:
+                placedExit.setCollideMask(BitMask32.allOff())
         else:
             self.rabbitCounter.setText(f'all rabbits caught!\n find an exit to win')
-        for rabbit in self.liveRabbitsList:
-            rabbit.setPos(rabbit, Vec3(0,rabbitSpeed,0))
-            rabbit.setZ(-0.45)
+            for placedExit in self.placedExitsList:
+                placedExit.setCollideMask(self.maskEvent)
         return task.cont    
 
 #=========================================================================
