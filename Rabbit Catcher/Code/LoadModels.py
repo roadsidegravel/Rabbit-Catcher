@@ -31,7 +31,8 @@ def load_square(parent, posV3 = Vec3(0,0,0),scaleV3 = Vec3(1,1,1)):
 """
     
 def load_cube(parent, posV3 = Vec3(0,0,0),scaleV3 = Vec3(1,1,1)):
-    newCube = loader.loadModel('Assets/cube.bam')
+    #newCube = loader.loadModel('Assets/cube.bam')
+    newCube = loader.loadModel('Assets/xcube.egg')
     #load the texture (cube map texture)
     newCube.reparentTo(parent)
     newCube.setPos(posV3)

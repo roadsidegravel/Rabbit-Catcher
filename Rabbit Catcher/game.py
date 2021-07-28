@@ -163,13 +163,14 @@ class Game(ShowBase):
         self.levelNodePath.removeNode()
         self.levelNodePath = newLevel
         self.levelNodePath.setCollideMask(self.maskPusher)
-        wallTexture = loader.loadCubeMap('Assets/cubeMapBrickWall/brickWall#.png')
-        #wallTexture = loader.loadTexture('Assets/Untitled.png')
+        #wallTexture = loader.loadCubeMap('Assets/cubeMapBrickWall/brickWall#.png')
+        wallTexture = loader.loadTexture('Assets/Untitled.png')
         #wallTexture.setWrapU(Texture.WM_clamp)
         #wallTexture.setWrapV(Texture.WM_clamp) 
         #wallTexture.setBorderColor((0.4, 0.5, 1, 1))
         #wallTexture.setAnisotropicDegree(2)
         for wallBlock in self.levelNodePath.findAllMatches('**/wall'):
+            wallBlock.setTexGen(TextureStage.getDefault(), TexGenAttrib.MWorldPosition)
             wallBlock.setTexture(wallTexture, 1)
             self.aiWorld.addObstacle(wallBlock)
         self.graphicsEngine.renderFrame()
